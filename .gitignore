@@ -1,0 +1,6 @@
+data/raw/
+data/processed/
+models/*.pkl
+results/
+*.pcap
+*.csv
