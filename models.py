@@ -9,9 +9,9 @@ warnings.filterwarnings('ignore')
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
-from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -21,44 +21,24 @@ print("=" * 55)
 print("HADRES — Phase 4: ML Model Training")
 print("=" * 55)
 
-# ─────────────────────────────────────────────
-# STEP 1 — Load cleaned dataset
-# ─────────────────────────────────────────────
 print("\n[1] Loading cleaned dataset...")
 df = pd.read_csv("data/processed/cleaned_dataset.csv", low_memory=False)
 print(f"    Loaded {len(df):,} rows")
 
-# ─────────────────────────────────────────────
-# STEP 2 — Load top 20 features
-# ─────────────────────────────────────────────
 print("\n[2] Loading top 20 features...")
 with open("data/processed/top_features.json", "r") as f:
     top_features = json.load(f)
-print(f"    Features: {top_features}")
 
-# ─────────────────────────────────────────────
-# STEP 3 — Prepare X and y
-# ─────────────────────────────────────────────
-print("\n[3] Preparing features and labels...")
 available = [f for f in top_features if f in df.columns]
 X = df[available]
 y = df['label_binary']
-print(f"    X shape: {X.shape}")
-print(f"    y distribution: {y.value_counts().to_dict()}")
 
-# ─────────────────────────────────────────────
-# STEP 4 — Train/test split
-# ─────────────────────────────────────────────
-print("\n[4] Splitting dataset 80/20...")
+print("\n[3] Splitting dataset 80/20...")
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+    X, y, test_size=0.2, random_state=42, stratify=y)
 print(f"    Train: {len(X_train):,} rows")
 print(f"    Test:  {len(X_test):,} rows")
 
-# ─────────────────────────────────────────────
-# STEP 5 — Train all 3 models
-# ─────────────────────────────────────────────
 os.makedirs("models", exist_ok=True)
 os.makedirs("results/charts", exist_ok=True)
 
@@ -68,13 +48,17 @@ models = {
         class_weight='balanced', n_jobs=-1),
     "Decision Tree": DecisionTreeClassifier(
         random_state=42, class_weight='balanced'),
-    "Naive Bayes": GaussianNB()
+    "Naive Bayes": GaussianNB(),
+    "XGBoost": XGBClassifier(
+        n_estimators=100, random_state=42,
+        eval_metric='logloss', verbosity=0,
+        scale_pos_weight=5)
 }
 
 results = {}
 
 for name, model in models.items():
-    print(f"\n[5] Training {name}...")
+    print(f"\n[4] Training {name}...")
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
@@ -96,12 +80,10 @@ for name, model in models.items():
     print(f"    F1 Score  : {results[name]['f1']}")
     print(f"    ROC-AUC   : {results[name]['auc']}")
 
-    # Save model
     model_name = name.lower().replace(" ", "_")
     joblib.dump(model, f"models/{model_name}.pkl")
     print(f"    Saved models/{model_name}.pkl")
 
-    # Confusion Matrix chart
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=['Normal', 'Attack'],
@@ -112,9 +94,7 @@ for name, model in models.items():
     plt.tight_layout()
     plt.savefig(f"results/charts/confusion_matrix_{model_name}.png", dpi=150)
     plt.close()
-    print(f"    Saved confusion matrix chart")
 
-    # ROC Curve
     fpr, tpr, _ = roc_curve(y_test, y_prob)
     plt.figure(figsize=(6, 5))
     plt.plot(fpr, tpr, color='darkorange', lw=2,
@@ -127,18 +107,12 @@ for name, model in models.items():
     plt.tight_layout()
     plt.savefig(f"results/charts/roc_curve_{model_name}.png", dpi=150)
     plt.close()
-    print(f"    Saved ROC curve chart")
+    print(f"    Saved charts")
 
-# ─────────────────────────────────────────────
-# STEP 6 — Save results summary
-# ─────────────────────────────────────────────
-print("\n[6] Saving results summary...")
+print("\n[5] Saving results...")
 with open("results/model_results.json", "w") as f:
     json.dump(results, f, indent=2)
 
-# ─────────────────────────────────────────────
-# SUMMARY TABLE
-# ─────────────────────────────────────────────
 print("\n" + "=" * 55)
 print("Phase 4 Complete — Model Comparison")
 print("=" * 55)
